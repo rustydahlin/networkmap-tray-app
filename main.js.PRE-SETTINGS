@@ -1,0 +1,83 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+const { app, Tray, Menu, Notification, shell } = require('electron');
+const path    = require('path');
+const fetch   = require('node-fetch');
+const cfg     = require('./config.json');
+
+let tray;
+let lastStatuses = {};
+
+function showNotification(site) {
+  const level = site.status === 'red' ? 'Offline' : 'Partial Connectivity';
+  const icon  = site.status === 'red' ? '🚨' : '⚠️';
+  new Notification({
+    title: `${icon} ${site.name}`,
+    body: `Status: ${level}`,
+    silent: false
+  }).show();
+}
+
+async function pollStatus() {
+  try {
+    const res = await fetch(cfg.statusUrl);
+    const sites = await res.json();
+    sites.forEach(site => {
+      const prev = lastStatuses[site.name];
+      if (prev && prev !== site.status && (site.status === 'red' || site.status === 'yellow')) {
+        showNotification(site);
+      }
+      lastStatuses[site.name] = site.status;
+    });
+  } catch (err) {
+    console.error('Error polling status:', err);
+  }
+}
+
+app.whenReady().then(() => {
+  tray = new Tray(path.join(__dirname, 'trayIcon.png'));
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() }
+  ]);
+  tray.setContextMenu(contextMenu);
+  tray.setToolTip('Network Map Monitor');
+
+  // Left-click on tray icon: show a list of current alerts
+  tray.on('click', async () => {
+    try {
+      const res = await fetch(cfg.statusUrl);
+      const sites = await res.json();
+      const alerts = sites.filter(site => site.status === 'red' || site.status === 'yellow');
+      let template;
+      if (alerts.length === 0) {
+        template = [
+          { label: 'No current alerts', enabled: false },
+          { type: 'separator' },
+          { label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) },
+          { label: 'Quit', click: () => app.quit() }
+        ];
+      } else {
+        template = alerts.map(site => ({
+          label: `${site.name} (${site.status.toUpperCase()})`,
+          click: () => shell.openExternal(cfg.openUrl)
+        }));
+        template.push({ type: 'separator' });
+        template.push({ label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) });
+        template.push({ label: 'Quit', click: () => app.quit() });
+      }
+      const menu = Menu.buildFromTemplate(template);
+      tray.popUpContextMenu(menu);
+    } catch (err) {
+      console.error('Error fetching alerts for tray:', err);
+    }
+  });
+
+
+  pollStatus();
+  setInterval(pollStatus, cfg.pollIntervalMs);
+});
+
+app.on('window-all-closed', e => {
+  e.preventDefault();
+});

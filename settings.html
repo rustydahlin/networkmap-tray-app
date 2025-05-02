@@ -1,0 +1,46 @@
+<!-- settings.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Map Settings</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    label { display: block; margin-top: .75rem; }
+    input { width: 100%; padding: .25rem; box-sizing: border-box; }
+    button { margin-top: 1rem; padding: .5rem 1rem; }
+  </style>
+</head>
+<body>
+  <h2>Map Connection</h2>
+  <form id="settings-form">
+    <label for="host">Host (no protocol, e.g. 127.0.0.1)</label>
+    <input type="text" id="host" required />
+
+    <label for="port">Port (e.g. 3000)</label>
+    <input type="number" id="port" required />
+
+    <button type="submit">Save</button>
+  </form>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      const cfg = await ipcRenderer.invoke('load-config');
+      // strip protocol + path from existing URLs
+      const url = new URL(cfg.openUrl);
+      document.getElementById('host').value = url.hostname;
+      document.getElementById('port').value = url.port;
+    });
+
+    document.getElementById('settings-form').addEventListener('submit', e => {
+      e.preventDefault();
+      const host = document.getElementById('host').value;
+      const port = document.getElementById('port').value;
+      ipcRenderer.send('save-config', { host, port });
+      window.close();
+    });
+  </script>
+</body>
+</html>
