@@ -1,5 +1,5 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-const { app, Tray, Menu, Notification, shell, BrowserWindow, ipcMain } = require('electron');
+const { app, Tray, Menu, Notification, shell, BrowserWindow, ipcMain, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 // Dynamic import helper for ESM-only node-fetch
@@ -7,7 +7,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 
 const configPath = path.join(__dirname, 'config.json');
 
-// Helper to read + parse config.json
+// ─── Config I/O ────────────────────────────────────────────────────────────────
 function loadConfig() {
   try {
     return JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -17,32 +17,44 @@ function loadConfig() {
   }
 }
 
-// Helper to write updated config.json
 function saveConfig(cfg) {
   fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8');
 }
 
+// ─── Tray Icon Assets ──────────────────────────────────────────────────────────
+// We map "yellow"→orange so anyAlarm uses the orange icon.
+const iconPaths = {
+  green:  path.join(__dirname, 'trayIcon-green.png'),
+  yellow: path.join(__dirname, 'trayIcon-orange.png'),
+  red:    path.join(__dirname, 'trayIcon-red.png')
+};
+
+// ─── State ─────────────────────────────────────────────────────────────────────
 let tray;
 let lastStatuses = {};
 let settingsWindow;
 let cfg = loadConfig();
 
-// Show desktop notification for a site
-function showNotification(site) {
-  const level = site.status === 'red' ? 'Offline' : 'Partial Connectivity';
-  const icon  = site.status === 'red' ? '🚨' : '⚠️';
-  new Notification({
-    title: `${icon} ${site.name}`,
-    body: `Status: ${level}`,
-    silent: false
-  }).show();
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+// Swap the tray icon image based on statusKey: 'green'|'yellow'|'red'
+function updateTrayIcon(statusKey) {
+  const img = nativeImage.createFromPath(iconPaths[statusKey] || iconPaths.red);
+  tray.setImage(img);
 }
 
-// Poll the /status endpoint and notify on changes
+function showNotification(site) {
+  const icon = site.status === 'red' ? '🚨' : '⚠️';
+  const body = site.status === 'red' ? 'Offline' : 'Partial Connectivity';
+  new Notification({ title: `${icon} ${site.name}`, body, silent: false }).show();
+}
+
+// ─── Polling Loop ──────────────────────────────────────────────────────────────
 async function pollStatus() {
   try {
     const res = await fetch(cfg.statusUrl);
     const sites = await res.json();
+
+    // Notify on changes
     sites.forEach(site => {
       const prev = lastStatuses[site.name];
       if (prev && prev !== site.status && (site.status === 'red' || site.status === 'yellow')) {
@@ -50,12 +62,19 @@ async function pollStatus() {
       }
       lastStatuses[site.name] = site.status;
     });
+
+    // Update tray icon: orange if any alarm, green otherwise
+    const anyAlarm = sites.some(s => s.status === 'red' || s.status === 'yellow');
+    updateTrayIcon(anyAlarm ? 'yellow' : 'green');
+    return sites;
   } catch (err) {
-    console.error('Error polling status:', err);
+    console.error('Error polling /status:', err);
+    updateTrayIcon('red');
+    throw err;
   }
 }
 
-// Open the settings window
+// ─── Settings Window ───────────────────────────────────────────────────────────
 function openSettings() {
   if (settingsWindow) {
     settingsWindow.focus();
@@ -75,107 +94,112 @@ function openSettings() {
   settingsWindow.on('closed', () => settingsWindow = null);
 }
 
-// Create the tray icon, context menus, and click handlers
+// ─── Tray Creation & Click Handling ────────────────────────────────────────────
 function createTray() {
-  tray = new Tray(path.join(__dirname, 'trayIcon.png'));
+  // Start with green (no alarms yet)
+  tray = new Tray(iconPaths.green);
+  tray.setToolTip('Network Map Monitor');
 
   // Right-click menu
-  const contextMenu = Menu.buildFromTemplate([
+  const rightMenu = Menu.buildFromTemplate([
     { label: 'Settings…', click: openSettings },
     { label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() }
   ]);
-  tray.setContextMenu(contextMenu);
-  tray.setToolTip('Network Map Monitor');
+  tray.setContextMenu(rightMenu);
 
-  // Left-click: show a list of current alerts + Solarwinds status
+  // Left-click: fetch live status, update icon, show alerts + Solarwinds
   tray.on('click', async () => {
+    let sites;
     try {
+      // 1) Fetch /status
       const res = await fetch(cfg.statusUrl);
-      const sites = await res.json();
-
-      // 1) Gather alerts
-      const alerts = sites.filter(site => site.status === 'red' || site.status === 'yellow');
-
-      // 2) Check for a "Solarwinds" entry in the same status list
-      const swSite = sites.find(s => s.name.toLowerCase() === 'solarwinds');
-      const swConnected = swSite && swSite.status === 'green';
-      const swItem = {
-        label: swConnected
-          ? '🟢 Solarwinds: Connected'
-          : '🔴 Solarwinds: Disconnected',
-        enabled: false
-      };
-
-      // 3) Build the alerts entries with emojis (no status words)
-      const alertItems = alerts.map(site => {
-        const emoji = site.status === 'red' ? '🔴' : '🟡';
-        return {
-          label: `${emoji} ${site.name}`,
-          click: () => shell.openExternal(cfg.openUrl)
-        };
-      });
-
-      // 4) Build the full menu: alerts → separator → Solarwinds → Open Map → Quit
-      let template;
-      if (alertItems.length === 0) {
-        template = [
-          { label: 'No current alerts', enabled: false },
-          { type: 'separator' },
-          swItem,
-          { label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) },
-          { label: 'Quit', click: () => app.quit() }
-        ];
-      } else {
-        template = [
-          ...alertItems,
-          { type: 'separator' },
-          swItem,
-          { label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) },
-          { label: 'Quit', click: () => app.quit() }
-        ];
-      }
-
-      const menu = Menu.buildFromTemplate(template);
-      tray.popUpContextMenu(menu);
+      sites = await res.json();
+      // 2) Update icon: orange if any alarm
+      const anyAlarm = sites.some(s => s.status === 'red' || s.status === 'yellow');
+      updateTrayIcon(anyAlarm ? 'yellow' : 'green');
     } catch (err) {
-      console.error('Error fetching alerts for tray:', err);
+      console.error('Error fetching /status:', err);
+      updateTrayIcon('red');
+      return tray.popUpContextMenu(Menu.buildFromTemplate([
+        { label: 'Connection lost', enabled: false },
+        { label: 'Quit', click: () => app.quit() }
+      ]));
     }
+
+    // 3) Build alert entries with emojis
+    const alertItems = sites
+      .filter(s => s.status === 'red' || s.status === 'yellow')
+      .map(s => ({
+        label: `${s.status === 'red' ? '🔴' : '🟡'} ${s.name}`,
+        click: () => shell.openExternal(cfg.openUrl)
+      }));
+    if (!alertItems.length) {
+      alertItems.push({ label: 'No current alerts', enabled: false });
+    }
+
+    // 4) Fetch /solarwinds-status
+    let swConnected = false;
+    try {
+      const swUrl = cfg.statusUrl.replace(/\/status$/, '/solarwinds-status');
+      const swRes = await fetch(swUrl);
+      const swJson = await swRes.json();
+      swConnected = !!swJson.connected;
+    } catch (err) {
+      console.error('Error fetching /solarwinds-status:', err);
+    }
+    const swItem = {
+      label: swConnected
+        ? '🟢 Solarwinds: Connected'
+        : '🔴 Solarwinds: Disconnected',
+      enabled: false
+    };
+
+    // 5) Assemble & show popup menu
+    const template = [
+      ...alertItems,
+      { type: 'separator' },
+      swItem,
+      { label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) },
+      { label: 'Quit', click: () => app.quit() }
+    ];
+    tray.popUpContextMenu(Menu.buildFromTemplate(template));
   });
 }
 
-// IPC handlers for settings window
+// ─── IPC Handlers ──────────────────────────────────────────────────────────────
 ipcMain.handle('load-config', () => {
   cfg = loadConfig();
   return cfg;
 });
 
-ipcMain.on('save-config', (_event, { host, port }) => {
+ipcMain.on('save-config', (_evt, { host, port }) => {
   cfg.openUrl   = `https://${host}:${port}/`;
   cfg.statusUrl = `https://${host}:${port}/status`;
   saveConfig(cfg);
 
   // Refresh right-click menu
-  const contextMenu = Menu.buildFromTemplate([
+  const rightMenu = Menu.buildFromTemplate([
     { label: 'Settings…', click: openSettings },
     { label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() }
   ]);
-  tray.setContextMenu(contextMenu);
+  tray.setContextMenu(rightMenu);
 
-  // Re-poll immediately with new URL
-  pollStatus();
+  // Immediately re-poll so icon matches new host
+  pollStatus().catch(() => {});
 });
 
+// ─── App Lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
   createTray();
-  pollStatus();
-  setInterval(pollStatus, cfg.pollIntervalMs);
+  pollStatus().catch(() => {});
+  setInterval(() => pollStatus().catch(() => {}), cfg.pollIntervalMs);
 });
 
-// Prevent the app from quitting when all windows are closed
 app.on('window-all-closed', e => {
+  // Prevent quitting so tray stays alive
   e.preventDefault();
 });
