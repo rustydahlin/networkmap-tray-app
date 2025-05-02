@@ -2,15 +2,8 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const { app, Tray, Menu, Notification, shell, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
-
-// Force ipv4 Using DNS
-//const dns = require('dns');
-//if (dns.setDefaultResultOrder) dns.setDefaultResultOrder('ipv4first');
-
-// Dynamic import helper for ESM-only node-fetch, Require HTTPS
-const https = require('https');
-const fetch = (...args) => import('node-fetch')
-  .then(({ default: fetch }) => fetch(...args, { agent: new https.Agent({ family: 4 }) }));
+// Dynamic import helper for ESM-only node-fetch
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const configPath = path.join(__dirname, 'config.json');
 
@@ -96,29 +89,54 @@ function createTray() {
   tray.setContextMenu(contextMenu);
   tray.setToolTip('Network Map Monitor');
 
-  // Left-click: show alerts menu
+  // Left-click: show a list of current alerts + Solarwinds status
   tray.on('click', async () => {
     try {
       const res = await fetch(cfg.statusUrl);
       const sites = await res.json();
+
+      // 1) Gather alerts
       const alerts = sites.filter(site => site.status === 'red' || site.status === 'yellow');
+
+      // 2) Check for a "Solarwinds" entry in the same status list
+      const swSite = sites.find(s => s.name.toLowerCase() === 'solarwinds');
+      const swConnected = swSite && swSite.status === 'green';
+      const swItem = {
+        label: swConnected
+          ? '🟢 Solarwinds: Connected'
+          : '🔴 Solarwinds: Disconnected',
+        enabled: false
+      };
+
+      // 3) Build the alerts entries with emojis (no status words)
+      const alertItems = alerts.map(site => {
+        const emoji = site.status === 'red' ? '🔴' : '🟡';
+        return {
+          label: `${emoji} ${site.name}`,
+          click: () => shell.openExternal(cfg.openUrl)
+        };
+      });
+
+      // 4) Build the full menu: alerts → separator → Solarwinds → Open Map → Quit
       let template;
-      if (alerts.length === 0) {
+      if (alertItems.length === 0) {
         template = [
           { label: 'No current alerts', enabled: false },
           { type: 'separator' },
+          swItem,
           { label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) },
           { label: 'Quit', click: () => app.quit() }
         ];
       } else {
-        template = alerts.map(site => ({
-          label: `${site.name} (${site.status.toUpperCase()})`,
-          click: () => shell.openExternal(cfg.openUrl)
-        }));
-        template.push({ type: 'separator' });
-        template.push({ label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) });
-        template.push({ label: 'Quit', click: () => app.quit() });
+        template = [
+          ...alertItems,
+          { type: 'separator' },
+          swItem,
+          { label: 'Open Map in Browser', click: () => shell.openExternal(cfg.openUrl) },
+          { label: 'Quit', click: () => app.quit() }
+        ];
       }
+
       const menu = Menu.buildFromTemplate(template);
       tray.popUpContextMenu(menu);
     } catch (err) {
@@ -151,7 +169,6 @@ ipcMain.on('save-config', (_event, { host, port }) => {
   pollStatus();
 });
 
-// App ready: create tray, start polling
 app.whenReady().then(() => {
   createTray();
   pollStatus();

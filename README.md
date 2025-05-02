@@ -9,7 +9,7 @@
 
 2. **Install dependencies**  
    ```powershell
-   cd tray-app
+   cd networkmap-tray-app
    npm install
    ```
 
@@ -17,9 +17,10 @@
    ```powershell
    npm start
    ```
+   NOTE: By default, the app uses https://127.0.0.1:3000. You may have to right click on the app and choose Settings, then put in the propper hostname and port where networkmap is running.
 
-4. **Package for Windows**  
-   ```powershell
+4. **Optional: Package for Windows**  
+   ```powershell from networkmap-tray-app folder
    npm run package
    ```
    The packaged application will appear under `dist/network-map-tray-win32-x64/`.
