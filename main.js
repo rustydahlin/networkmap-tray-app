@@ -194,7 +194,7 @@ function createTray() {
         // if your /status payload includes lat/lng:
         let focusUrl;
         if (site.lat != null && site.lng != null) {
-          focusUrl = `${cfg.openUrl}?lat=${site.lat}&lng=${site.lng}&zoom=15&popup=${encodeURIComponent(
+          focusUrl = `${cfg.openUrl}?lat=${site.lat}&lng=${site.lng}&zoom=10&popup=${encodeURIComponent(
             site.name
           )}`;
         } else {
