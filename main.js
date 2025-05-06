@@ -45,6 +45,9 @@ const iconPaths = {
 let tray;
 let lastStatuses = {};
 let lastSwConnected = null;
+let lastServerConnected = null;            // ↕️ SERVER CONNECTION ADDED ↕️
+let reconnectTime = null;
+let suppressNotifications = false;
 let settingsWindow;
 let cfg = loadConfig();
 
@@ -70,32 +73,65 @@ async function pollStatus() {
     const res = await fetch(cfg.statusUrl);
     const sites = await res.json();
 
-    // Notify only on transitions to yellow/red
+    // ↕️ SERVER CONNECTION NOTIFICATIONS ↕️
+    // If we've polled once before and we were disconnected, now we're back
+    if (lastServerConnected === false) {
+      new Notification({
+        title: '🟢 Server Re-connected',
+        body: 'Connection to server restored.'
+      }).show();
+    }
+    lastServerConnected = true;
+
+    // Server is back online
+    if (reconnectTime === null) {
+      reconnectTime = Date.now();
+      suppressNotifications = true;
+
+      // Wait 3 minutes before resuming notifications
+      setTimeout(() => {
+        suppressNotifications = false;
+        console.log('Notification suppression ended.');
+      }, 3 * 60 * 1000);
+    }
+
+    // Only notify on status transitions (yellow/red), and not during suppression
     sites.forEach(site => {
       const prev = lastStatuses[site.name];
       if (
         prev &&
         prev !== site.status &&
-        (site.status === 'red' || site.status === 'yellow')
+        (site.status === 'red' || site.status === 'yellow') &&
+        !suppressNotifications
       ) {
         showNotification(site);
       }
       lastStatuses[site.name] = site.status;
     });
 
-    // If any site is red or yellow, use yellow (orange) icon; else green
-    const anyAlarm = sites.some(
-      s => s.status === 'red' || s.status === 'yellow'
-    );
+    const anyAlarm = sites.some(s => s.status === 'red' || s.status === 'yellow');
     updateTrayIcon(anyAlarm ? 'yellow' : 'green');
     return sites;
   } catch (err) {
     console.error('Error polling /status:', err);
-    // network failure → red icon
+
+    // ↕️ SERVER CONNECTION LOST NOTIFICATION ↕️
+    if (lastServerConnected === true || lastServerConnected === null) {
+      new Notification({
+        title: '🔴 Server Disconnected',
+        body: 'Lost connection to server.'
+      }).show();
+    }
+    lastServerConnected = false;
+
     updateTrayIcon('red');
+
+    // Clear reconnect timestamp so we trigger delay next time it comes back
+    reconnectTime = null;
     throw err;
   }
 }
+
 
 async function pollSolarwindsStatus() {
   try {
@@ -180,7 +216,7 @@ function createTray() {
       updateTrayIcon('red');
       return tray.popUpContextMenu(
         Menu.buildFromTemplate([
-          { label: 'Connection lost', enabled: false },
+          { label: '🔴 Server: Disconnected', enabled: false },     // ↕️ SERVER STATUS IN MENU ↕️
           { label: 'Quit', click: () => app.quit() }
         ])
       );
@@ -212,7 +248,15 @@ function createTray() {
       alertItems.push({ label: 'No current alerts', enabled: false });
     }
 
-    // 3) fetch /solarwinds-status for actual Solarwinds connection
+    // 3) SERVER STATUS MENU ITEM
+    const serverItem = {
+      label: lastServerConnected
+        ? '🟢 Server: Connected'
+        : '🔴 Server: Disconnected',
+      enabled: false
+    };
+
+    // 4) fetch /solarwinds-status for actual Solarwinds connection
     let swConnected = false;
     try {
       const swUrl = cfg.statusUrl.replace(
@@ -236,6 +280,7 @@ function createTray() {
     const menuTpl = [
       ...alertItems,
       { type: 'separator' },
+      serverItem,   // ↕️ INSERTED HERE ↕️
       swItem,
       {
         label: 'Open Map in Browser',
