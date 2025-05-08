@@ -11,6 +11,35 @@ const {
   nativeImage
 } = require('electron');
 const path = require('path');
+const winston = require('winston');
+const log = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.printf(({ timestamp, level, message }) => {
+      return `${timestamp} [${level.toUpperCase()}]: ${message}`;
+    })
+  ),
+  transports: [
+    new winston.transports.File({ filename: 'tray-app.log' }),
+    new winston.transports.Console()
+  ]
+});
+
+const originalConsole = {
+  log: console.log,
+  error: console.error
+};
+
+function logInfo(msg) {
+  originalConsole.log(msg);
+  log.info(msg);
+}
+
+function logError(msg) {
+  originalConsole.error(msg);
+  log.error(msg);
+}
 const fs = require('fs');
 
 // ESM-only node-fetch helper
@@ -24,7 +53,7 @@ function loadConfig() {
   try {
     return JSON.parse(fs.readFileSync(configPath, 'utf8'));
   } catch (e) {
-    console.error('Failed to load config.json:', e);
+    logError('Failed to load config.json:', e);
     return {};
   }
 }
@@ -91,7 +120,7 @@ async function pollStatus() {
       // Wait 3 minutes before resuming notifications
       setTimeout(() => {
         suppressNotifications = false;
-        console.log('Notification suppression ended.');
+        logInfo('Notification suppression ended.');
       }, 3 * 60 * 1000);
     }
 
@@ -113,7 +142,7 @@ async function pollStatus() {
     updateTrayIcon(anyAlarm ? 'yellow' : 'green');
     return sites;
   } catch (err) {
-    console.error('Error polling /status:', err);
+    logError('Error polling /status:', err);
 
     // ↕️ SERVER CONNECTION LOST NOTIFICATION ↕️
     if (lastServerConnected === true || lastServerConnected === null) {
@@ -157,7 +186,7 @@ async function pollSolarwindsStatus() {
     //   connected ? iconPaths.green : iconPaths.red
     // ));
   } catch (e) {
-    console.error('SolarWinds poll failed:', e);
+    logError('SolarWinds poll failed:', e);
   }
 }
 
@@ -212,7 +241,7 @@ function createTray() {
       );
       updateTrayIcon(anyAlarm ? 'yellow' : 'green');
     } catch (err) {
-      console.error('Error fetching /status:', err);
+      logError('Error fetching /status:', err);
       updateTrayIcon('red');
       return tray.popUpContextMenu(
         Menu.buildFromTemplate([
@@ -267,7 +296,7 @@ function createTray() {
       const swJson = await swRes.json();
       swConnected = !!swJson.connected;
     } catch (err) {
-      console.error('Error fetching /solarwinds-status:', err);
+      logError('Error fetching /solarwinds-status:', err);
     }
     const swItem = {
       label: swConnected

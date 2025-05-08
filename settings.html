@@ -1,4 +1,3 @@
-<!-- settings.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -7,14 +6,20 @@
   <style>
     body { font-family: sans-serif; padding: 1rem; }
     label { display: block; margin-top: .75rem; }
-    input { width: 100%; padding: .25rem; box-sizing: border-box; }
+    input, select { width: 100%; padding: .25rem; box-sizing: border-box; }
     button { margin-top: 1rem; padding: .5rem 1rem; }
   </style>
 </head>
 <body>
   <h2>Map Connection</h2>
   <form id="settings-form">
-    <label for="host">Host (no protocol, e.g. 127.0.0.1)</label>
+    <label for="protocol">Protocol</label>
+    <select id="protocol">
+      <option value="http">http</option>
+      <option value="https">https</option>
+    </select>
+
+    <label for="host">Host (e.g. 127.0.0.1 or your-server)</label>
     <input type="text" id="host" required />
 
     <label for="port">Port (e.g. 3000)</label>
@@ -28,17 +33,18 @@
 
     window.addEventListener('DOMContentLoaded', async () => {
       const cfg = await ipcRenderer.invoke('load-config');
-      // strip protocol + path from existing URLs
       const url = new URL(cfg.openUrl);
+      document.getElementById('protocol').value = url.protocol.replace(':', '');
       document.getElementById('host').value = url.hostname;
       document.getElementById('port').value = url.port;
     });
 
     document.getElementById('settings-form').addEventListener('submit', e => {
       e.preventDefault();
+      const protocol = document.getElementById('protocol').value;
       const host = document.getElementById('host').value;
       const port = document.getElementById('port').value;
-      ipcRenderer.send('save-config', { host, port });
+      ipcRenderer.send('save-config', { protocol, host, port });
       window.close();
     });
   </script>
