@@ -2,3 +2,4 @@
 /package-lock.json
 /dist
 tray-app.log
+.DS_Store
