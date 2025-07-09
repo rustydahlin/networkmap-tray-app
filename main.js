@@ -10,6 +10,7 @@ const {
   ipcMain,
   nativeImage
 } = require('electron');
+const sound = require('sound-play');
 const path = require('path');
 const winston = require('winston');
 const log = winston.createLogger({
@@ -93,7 +94,13 @@ function updateTrayIcon(statusKey) {
 function showNotification(site) {
   const icon = site.status === 'red' ? '🚨' : '⚠️';
   const body = site.status === 'red' ? 'Offline' : 'Partial Connectivity';
-  new Notification({ title: `${icon} ${site.name}`, body, silent: false }).show();
+
+  // 1) Mute the toast’s built-in ding
+  new Notification({ title: `${icon} ${site.name}`, body, silent: true }).show();
+
+  // 2) Play your custom alert
+  sound.play(path.join(__dirname, 'assets', 'alert.wav'))
+    .catch(err => logError('Sound play failed:', err));
 }
 
 // Poll /status, raise notifications, update tray icon
@@ -107,9 +114,13 @@ async function pollStatus() {
     if (lastServerConnected === false) {
       new Notification({
         title: '🟢 Server Re-connected',
-        body: 'Connection to server restored.'
-      }).show();
-    }
+        body: 'Connection to server restored.',
+        silent: true
+    }).show();
+
+    sound.play(path.join(__dirname, 'assets', 'server-back.wav'));
+  }
+
     lastServerConnected = true;
 
     // Server is back online
@@ -145,12 +156,17 @@ async function pollStatus() {
     logError('Error polling /status:', err);
 
     // ↕️ SERVER CONNECTION LOST NOTIFICATION ↕️
-    if (lastServerConnected === true || lastServerConnected === null) {
-      new Notification({
-        title: '🔴 Server Disconnected',
-        body: 'Lost connection to server.'
-      }).show();
-    }
+    
+if (lastServerConnected === true || lastServerConnected === null) {
+  new Notification({
+    title: '🔴 Server Disconnected',
+    body: 'Lost connection to server.',
+    silent: true
+  }).show();
+
+  sound.play(path.join(__dirname, 'assets', 'server-down.wav'));
+}
+
     lastServerConnected = false;
 
     updateTrayIcon('red');

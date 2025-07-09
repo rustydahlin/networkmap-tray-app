@@ -4,18 +4,19 @@
     "description": "Electron tray application for network map monitoring",
     "main": "main.js",
     "scripts": {
-      "start": "electron .",
-      "package": "electron-packager . network-map-tray --platform=win32 --arch=x64 --icon=trayIcon.ico --out=dist --overwrite --prune=true"
+        "start": "electron .",
+        "package": "electron-packager . network-map-tray --platform=win32 --arch=x64 --icon=trayIcon.ico --out=dist --overwrite --prune=true"
     },
     "author": "Rusty Dahlin",
     "license": "MIT",
     "dependencies": {
-      "electron-store": "^8.1.0",
-      "node-fetch": "^3.3.2",
-      "winston": "^3.17.0"
+        "electron-store": "^8.1.0",
+        "node-fetch": "^3.3.2",
+        "sound-play": "^1.1.0",
+        "winston": "^3.17.0"
     },
     "devDependencies": {
-      "electron": "^26.0.0",
-      "electron-packager": "^17.1.0"
+        "electron": "^26.0.0",
+        "electron-packager": "^17.1.0"
     }
-  }
+}
