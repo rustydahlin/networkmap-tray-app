@@ -18,5 +18,8 @@
     "devDependencies": {
         "electron": "^26.0.0",
         "electron-packager": "^17.1.0"
+    },
+    "allowScripts": {
+        "electron@26.6.10": true
     }
 }

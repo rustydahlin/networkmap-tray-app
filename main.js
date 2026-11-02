@@ -78,8 +78,12 @@ let lastSwConnected = null;
 let lastServerConnected = null;            // ↕️ SERVER CONNECTION ADDED ↕️
 let reconnectTime = null;
 let suppressNotifications = false;
+let notificationSuppressionTimer;
 let settingsWindow;
 let cfg = loadConfig();
+
+const NOTIFICATION_SUPPRESSION_MS = 3 * 60 * 1000;
+const ALERT_BURST_THRESHOLD = 3;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 // Swap the tray icon image based on 'green'|'yellow'|'red'
@@ -101,6 +105,27 @@ function showNotification(site) {
   // 2) Play your custom alert
   sound.play(path.join(__dirname, 'assets', 'alert.wav'))
     .catch(err => logError('Sound play failed:', err));
+}
+
+function showAlertSummary(count) {
+  new Notification({
+    title: 'Multiple sites reporting issues',
+    body: `${count} sites changed to an alert state. Individual alerts are paused for 3 minutes.`,
+    silent: true
+  }).show();
+
+  sound.play(path.join(__dirname, 'assets', 'alert.wav'))
+    .catch(err => logError('Sound play failed:', err));
+}
+
+function suppressSiteNotifications() {
+  suppressNotifications = true;
+  clearTimeout(notificationSuppressionTimer);
+  notificationSuppressionTimer = setTimeout(() => {
+    suppressNotifications = false;
+    notificationSuppressionTimer = null;
+    logInfo('Notification suppression ended.');
+  }, NOTIFICATION_SUPPRESSION_MS);
 }
 
 // Poll /status, raise notifications, update tray icon
@@ -126,26 +151,34 @@ async function pollStatus() {
     // Server is back online
     if (reconnectTime === null) {
       reconnectTime = Date.now();
-      suppressNotifications = true;
-
-      // Wait 3 minutes before resuming notifications
-      setTimeout(() => {
-        suppressNotifications = false;
-        logInfo('Notification suppression ended.');
-      }, 3 * 60 * 1000);
+      suppressSiteNotifications();
     }
 
-    // Only notify on status transitions (yellow/red), and not during suppression
-    sites.forEach(site => {
+    const alertTransitions = sites.filter(site => {
       const prev = lastStatuses[site.name];
-      if (
+      return (
         prev &&
         prev !== site.status &&
-        (site.status === 'red' || site.status === 'yellow') &&
-        !suppressNotifications
+        (site.status === 'red' || site.status === 'yellow')
+      );
+    });
+    const activeAlertCount = sites.filter(
+      site => site.status === 'red' || site.status === 'yellow'
+    ).length;
+
+    if (!suppressNotifications) {
+      if (
+        alertTransitions.length >= ALERT_BURST_THRESHOLD ||
+        (alertTransitions.length > 0 && activeAlertCount >= ALERT_BURST_THRESHOLD)
       ) {
-        showNotification(site);
+        showAlertSummary(activeAlertCount);
+        suppressSiteNotifications();
+      } else {
+        alertTransitions.forEach(showNotification);
       }
+    }
+
+    sites.forEach(site => {
       lastStatuses[site.name] = site.status;
     });
 
