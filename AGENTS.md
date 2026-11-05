@@ -55,5 +55,6 @@ instructions for all coding agents; keep them current when workflows change.
   restrictions, sensitive data, or unexpected changes. Never force-push, rewrite
   history, change visibility, or bypass security controls as routine release work;
   those need separate explicit authorization.
-- No release has been requested merely by establishing this workflow. The current
-  1.0.0 package version is an untagged baseline, not evidence of a published release.
+- The original 1.0.0 package version was an untagged baseline, not a published
+  release. Determine the current release from package.json, Git tags, and GitHub;
+  keep the README release link current when publishing a new version.

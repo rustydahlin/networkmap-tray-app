@@ -28,9 +28,10 @@ function prepareChangelog(changelog, version, date) {
   const section = unreleasedSection(changelog);
   if (!/^- \S/m.test(section.body)) throw new Error('Unreleased has no changes to release.');
   if (changelog.includes(`## [${version}]`)) throw new Error(`Version ${version} already exists in CHANGELOG.md.`);
+  const remaining = changelog.slice(section.end);
   return changelog.slice(0, section.start) +
-    `## [Unreleased]\n\n## [${version}] - ${date}\n\n${section.body}\n\n` +
-    changelog.slice(section.end);
+    `## [Unreleased]\n\n## [${version}] - ${date}\n\n${section.body}\n` +
+    (remaining ? `\n${remaining}` : '');
 }
 
 function releaseNotes(changelog, version) {

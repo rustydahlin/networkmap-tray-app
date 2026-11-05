@@ -157,6 +157,8 @@ test('release preparation infers semver and preserves an empty Unreleased sectio
   assert.equal(releaseNotes(prepared, '1.1.0'), '### Added\n- Added installer publishing.\n');
   assert.throws(() => prepareChangelog(prepared, '1.2.0', '2026-11-05'), /no changes/);
   assert.throws(() => prepareChangelog(changelog, '1.0.0', '2026-11-05'), /already exists/);
+  const firstRelease = prepareChangelog(changelog.slice(0, changelog.indexOf('## [1.0.0]')), '1.1.0', '2026-11-05');
+  assert.ok(firstRelease.endsWith('Added installer publishing.\n'));
 });
 
 test('release verification rejects tag, lockfile, and changelog mismatches', context => {

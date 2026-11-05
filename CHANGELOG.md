@@ -6,6 +6,8 @@ All notable changes to this project are documented here using
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-05
+
 ### Added
 - Added a single-file, per-user Windows installer alongside the raw application folder.
 - Added automatic GitHub release downloads and installation with a tray notification and restart.
@@ -24,6 +26,7 @@ All notable changes to this project are documented here using
 - Removed the packaging command's reference to a nonexistent Windows icon file.
 - Kept alert sound files accessible to the external Windows audio player in installed builds.
 - Preserved the login-startup option after saving connection settings.
+- Prevented first-release preparation from adding a trailing blank line to the changelog.
 
 ### Security
 - Restricted the existing self-signed certificate exception to monitoring requests instead of disabling TLS verification globally.

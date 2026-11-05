@@ -1,7 +1,7 @@
 {
     "name": "tray-app",
     "productName": "Network Map Tray",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Electron tray application for network map monitoring",
     "main": "src/main/main.js",
     "scripts": {
@@ -43,7 +43,14 @@
             "package.json"
         ],
         "win": {
-            "target": [{ "target": "nsis", "arch": ["x64"] }],
+            "target": [
+                {
+                    "target": "nsis",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ],
             "executableName": "network-map-tray"
         },
         "nsis": {
@@ -53,12 +60,14 @@
             "deleteAppDataOnUninstall": false,
             "artifactName": "Network-Map-Tray-Setup-${version}.${ext}"
         },
-        "publish": [{
-            "provider": "github",
-            "owner": "rustydahlin",
-            "repo": "networkmap-tray-app",
-            "releaseType": "release"
-        }]
+        "publish": [
+            {
+                "provider": "github",
+                "owner": "rustydahlin",
+                "repo": "networkmap-tray-app",
+                "releaseType": "release"
+            }
+        ]
     },
     "allowScripts": {
         "electron@26.6.10": true

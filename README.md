@@ -2,6 +2,8 @@
 
 Windows x64 tray application for network map monitoring.
 
+Current release: [v1.1.0](https://github.com/rustydahlin/networkmap-tray-app/releases/tag/v1.1.0).
+
 ## Install
 
 Download the setup executable from
