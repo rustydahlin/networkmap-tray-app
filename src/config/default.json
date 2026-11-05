@@ -1,0 +1,5 @@
+{
+  "statusUrl": "https://127.0.0.1:3000/status",
+  "pollIntervalMs": 10000,
+  "openUrl": "https://127.0.0.1:3000/"
+}

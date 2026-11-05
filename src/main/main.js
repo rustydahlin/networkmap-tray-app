@@ -1,5 +1,3 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 const {
   app,
   Tray,
@@ -12,6 +10,10 @@ const {
 } = require('electron');
 const sound = require('sound-play');
 const path = require('path');
+const https = require('https');
+const { autoUpdater } = require('electron-updater');
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
 const winston = require('winston');
 const log = winston.createLogger({
   level: 'info',
@@ -22,7 +24,7 @@ const log = winston.createLogger({
     })
   ),
   transports: [
-    new winston.transports.File({ filename: 'tray-app.log' }),
+    new winston.transports.File({ filename: path.join(app.getPath('userData'), 'tray-app.log') }),
     new winston.transports.Console()
   ]
 });
@@ -42,16 +44,31 @@ function logError(msg) {
   log.error(msg);
 }
 const fs = require('fs');
+const isInstalledBuild = app.isPackaged &&
+  fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'));
 
 // ESM-only node-fetch helper
-const fetch = (...args) =>
-  import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const monitoringAgent = new https.Agent({ rejectUnauthorized: false });
+const fetch = (url, options = {}) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(url, {
+    ...options,
+    agent: new URL(url).protocol === 'https:' ? monitoringAgent : undefined
+  }));
 
-const configPath = path.join(__dirname, 'config.json');
+const sourcePath = path.join(__dirname, '..');
+const bundledConfigPath = path.join(sourcePath, 'config', 'default.json');
+const localConfigPath = path.join(sourcePath, 'config', 'local.json');
+const configPath = app.isPackaged
+  ? path.join(app.getPath('userData'), 'config.json')
+  : localConfigPath;
 
 // ─── Config I/O ────────────────────────────────────────────────────────────────
 function loadConfig() {
   try {
+    if (!fs.existsSync(configPath)) {
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.copyFileSync(bundledConfigPath, configPath);
+    }
     return JSON.parse(fs.readFileSync(configPath, 'utf8'));
   } catch (e) {
     logError('Failed to load config.json:', e);
@@ -66,9 +83,9 @@ function saveConfig(cfg) {
 // ─── Tray Icon Assets ──────────────────────────────────────────────────────────
 // Note: yellow→orange so user sees orange for alarms
 const iconPaths = {
-  green: path.join(__dirname, 'trayIcon-green.png'),
-  yellow: path.join(__dirname, 'trayIcon-orange.png'),
-  red: path.join(__dirname, 'trayIcon-red.png')
+  green: path.join(sourcePath, 'assets', 'icons', 'trayIcon-green.png'),
+  yellow: path.join(sourcePath, 'assets', 'icons', 'trayIcon-orange.png'),
+  red: path.join(sourcePath, 'assets', 'icons', 'trayIcon-red.png')
 };
 
 // ─── State ─────────────────────────────────────────────────────────────────────
@@ -103,7 +120,7 @@ function showNotification(site) {
   new Notification({ title: `${icon} ${site.name}`, body, silent: true }).show();
 
   // 2) Play your custom alert
-  sound.play(path.join(__dirname, 'assets', 'alert.wav'))
+  sound.play(path.join(sourcePath, 'assets', 'sounds', 'alert.wav'))
     .catch(err => logError('Sound play failed:', err));
 }
 
@@ -114,7 +131,7 @@ function showAlertSummary(count) {
     silent: true
   }).show();
 
-  sound.play(path.join(__dirname, 'assets', 'alert.wav'))
+  sound.play(path.join(sourcePath, 'assets', 'sounds', 'alert.wav'))
     .catch(err => logError('Sound play failed:', err));
 }
 
@@ -143,7 +160,7 @@ async function pollStatus() {
         silent: true
     }).show();
 
-    sound.play(path.join(__dirname, 'assets', 'server-back.wav'));
+    sound.play(path.join(sourcePath, 'assets', 'sounds', 'server-back.wav'));
   }
 
     lastServerConnected = true;
@@ -197,7 +214,7 @@ if (lastServerConnected === true || lastServerConnected === null) {
     silent: true
   }).show();
 
-  sound.play(path.join(__dirname, 'assets', 'server-down.wav'));
+  sound.play(path.join(sourcePath, 'assets', 'sounds', 'server-down.wav'));
 }
 
     lastServerConnected = false;
@@ -255,27 +272,41 @@ function openSettings() {
       contextIsolation: false
     }
   });
-  settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
+  settingsWindow.loadFile(path.join(sourcePath, 'renderer', 'settings.html'));
   settingsWindow.on('closed', () => (settingsWindow = null));
 }
 
 // ─── Tray Creation & Click Handling ────────────────────────────────────────────
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    { label: 'Settings…', click: openSettings },
+    {
+      label: 'Open Map in Browser',
+      click: () => shell.openExternal(cfg.openUrl)
+    },
+    {
+      label: 'Start with Windows',
+      type: 'checkbox',
+      visible: isInstalledBuild && process.platform === 'win32',
+      checked: cfg.startAtLogin !== false,
+      click: item => {
+        cfg.startAtLogin = item.checked;
+        saveConfig(cfg);
+        app.setLoginItemSettings({ openAtLogin: item.checked });
+      }
+    },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() }
+  ]);
+}
+
 function createTray() {
   // Start neutral (green)
   tray = new Tray(iconPaths.green);
   tray.setToolTip('Network Map Monitor');
 
   // Right-click menu stays the same
-  const rightMenu = Menu.buildFromTemplate([
-    { label: 'Settings…', click: openSettings },
-    {
-      label: 'Open Map in Browser',
-      click: () => shell.openExternal(cfg.openUrl)
-    },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() }
-  ]);
-  tray.setContextMenu(rightMenu);
+  tray.setContextMenu(buildTrayMenu());
 
   // Left-click: fetch live status → build menu entries
   tray.on('click', async () => {
@@ -382,25 +413,46 @@ ipcMain.on('save-config', (_evt, { host, port }) => {
   saveConfig(cfg);
 
   // refresh right‐click menu
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Settings…', click: openSettings },
-      {
-        label: 'Open Map in Browser',
-        click: () => shell.openExternal(cfg.openUrl)
-      },
-      { type: 'separator' },
-      { label: 'Quit', click: () => app.quit() }
-    ])
-  );
+  tray.setContextMenu(buildTrayMenu());
 
   // immediately refresh icon state
   pollStatus().catch(() => {});
 });
 
 // ─── App Lifecycle ─────────────────────────────────────────────────────────────
+function startAutomaticUpdates() {
+  if (!isInstalledBuild || process.platform !== 'win32') return;
+
+  autoUpdater.logger = log;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.on('error', error => logError(`Update failed: ${error.message}`));
+  autoUpdater.on('update-downloaded', () => {
+    new Notification({
+      title: 'Network Map Tray update ready',
+      body: 'Restarting in 5 seconds to install the update.',
+      silent: true
+    }).show();
+    setTimeout(() => autoUpdater.quitAndInstall(true, true), 5000);
+  });
+
+  const checkForUpdates = () => {
+    autoUpdater.checkForUpdates().catch(error => {
+      logError(`Update check failed: ${error.message}`);
+    });
+  };
+  checkForUpdates();
+  setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+}
+
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return;
+  app.setAppUserModelId('com.rustydahlin.networkmaptray');
+  if (isInstalledBuild && process.platform === 'win32') {
+    app.setLoginItemSettings({ openAtLogin: cfg.startAtLogin !== false });
+  }
   createTray();
+  startAutomaticUpdates();
   pollStatus().catch(() => {});
   pollSolarwindsStatus(); 
   setInterval(pollStatus, cfg.pollIntervalMs);

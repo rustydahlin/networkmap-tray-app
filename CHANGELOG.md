@@ -1,0 +1,30 @@
+# Changelog
+
+All notable changes to this project are documented here using
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Added a single-file, per-user Windows installer alongside the raw application folder.
+- Added automatic GitHub release downloads and installation with a tray notification and restart.
+- Added default Windows login startup with a tray-menu opt-out.
+- Added automated Windows release builds, GitHub asset publishing, and cross-platform CI checks.
+- Added agent instructions and a version-up workflow for versioning, changelog maintenance, and publishing.
+- Added regression tests for startup, settings, source paths, and release preparation.
+
+### Changed
+- Organized runtime code, settings UI, defaults, icons, and sounds under src/.
+- Moved packaged settings and logs outside the application folder to preserve them across upgrades.
+- Kept deployment-specific configuration local and excluded it from source control and build outputs.
+- Tracked the dependency lockfile for reproducible local and GitHub builds.
+
+### Fixed
+- Removed the packaging command's reference to a nonexistent Windows icon file.
+- Kept alert sound files accessible to the external Windows audio player in installed builds.
+- Preserved the login-startup option after saving connection settings.
+
+### Security
+- Restricted the existing self-signed certificate exception to monitoring requests instead of disabling TLS verification globally.
+- Replaced the bundled production monitoring endpoint with localhost defaults.

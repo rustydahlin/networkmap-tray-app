@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build or retry (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run release:verify
+      - name: Build Windows distributions
+        run: npm run package
+      - name: Prepare release notes and raw application ZIP
+        shell: pwsh
+        run: |
+          npm run release:notes -- dist/release/RELEASE-NOTES.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          Compress-Archive -Path dist/network-map-tray-win32-x64 -DestinationPath "dist/release/Network-Map-Tray-Raw-$version-win32-x64.zip"
+      - name: Retain build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ env.RELEASE_TAG }}
+          path: |
+            dist/installer/*.exe
+            dist/release/*.exe
+            dist/release/*.blockmap
+            dist/release/*.yml
+            dist/release/*.zip
+          retention-days: 14
+          if-no-files-found: error
+      - name: Publish complete GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')" != true ]; then
+              echo "Refusing to overwrite an already published release."
+              exit 1
+            fi
+            gh release edit "$RELEASE_TAG" --title "Network Map Tray $RELEASE_TAG" --notes-file dist/release/RELEASE-NOTES.md
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "Network Map Tray $RELEASE_TAG" --notes-file dist/release/RELEASE-NOTES.md
+          fi
+          gh release upload "$RELEASE_TAG" dist/release/Network-Map-Tray-Setup-*.exe dist/release/*.exe.blockmap dist/release/latest.yml dist/release/Network-Map-Tray-Raw-*.zip --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh release view "$RELEASE_TAG" --json url,tagName,isDraft,assets
