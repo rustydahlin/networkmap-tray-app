@@ -39,7 +39,7 @@ function boot({ packaged = true, installed = true, saved, locked = true, local }
       app: {
         isPackaged: packaged, getPath: () => '/user', requestSingleInstanceLock: () => locked,
         quit: () => { state.quits++; }, whenReady: () => ({ then: callback => { ready = callback; } }),
-        setAppUserModelId() {}, setLoginItemSettings: options => login.push(options.openAtLogin), on() {}
+        setAppUserModelId() {}, getVersion: () => '1.1.0', setLoginItemSettings: options => login.push(options.openAtLogin), on() {}
       },
       Tray: class {
         constructor(image) { images.push(image); }
@@ -50,7 +50,16 @@ function boot({ packaged = true, installed = true, saved, locked = true, local }
       Menu: { buildFromTemplate: value => value },
       Notification: class { constructor(options) { notices.push(options); } show() {} },
       shell: {},
-      BrowserWindow: class { loadFile(file) { windows.push(file); } on() {} },
+      BrowserWindow: class {
+        constructor(options) {
+          state.windowOptions = options;
+          state.settingsWindow = this;
+          this.webContents = { setWindowOpenHandler() {}, on() {} };
+        }
+        setMenu(value) { state.windowMenu = value; }
+        loadFile(file) { windows.push(file); }
+        on() {}
+      },
       ipcMain: { handle: (name, callback) => { ipc[name] = callback; }, on: (name, callback) => { ipc[name] = callback; } },
       nativeImage: {}
     },
@@ -97,7 +106,8 @@ test('saved settings survive upgrades and startup opt-out survives settings chan
   assert.deepEqual(JSON.parse(app.files.get('/user/config.json')), saved);
   assert.deepEqual(app.login, [false]);
   app.state.menu.find(item => item.label === 'Start with Windows').click({ checked: false });
-  app.ipc['save-config']({}, { host: 'new-host', port: 3000 });
+  app.state.menu.find(item => item.label.startsWith('Settings')).click();
+  app.ipc['save-config']({ sender: app.state.settingsWindow.webContents }, { host: 'new-host', port: 3000 });
   assert.equal(JSON.parse(app.files.get('/user/config.json')).startAtLogin, false);
   assert.equal(JSON.parse(app.files.get('/user/config.json')).openUrl, 'https://new-host:3000/');
   assert.ok(app.state.menu.find(item => item.label === 'Start with Windows'));
@@ -132,8 +142,63 @@ test('downloaded update notifies and restarts silently after five seconds', () =
   assert.equal(app.state.installs, 1);
 });
 
+test('settings use an isolated preload and enough content space without a menu bar', () => {
+  const app = boot();
+  app.state.menu.find(item => item.label.startsWith('Settings')).click();
+  assert.equal(app.state.windowOptions.useContentSize, true);
+  assert.equal(app.state.windowOptions.height, 350);
+  assert.equal(app.state.windowMenu, null);
+  assert.equal(app.state.windowOptions.webPreferences.nodeIntegration, false);
+  assert.equal(app.state.windowOptions.webPreferences.contextIsolation, true);
+  assert.equal(app.state.windowOptions.webPreferences.sandbox, true);
+  assert.equal(app.state.windowOptions.webPreferences.preload, '/bundle/src/main/preload.cjs');
+});
+
+test('settings preserve HTTP and reject invalid connections or untrusted IPC senders', () => {
+  const app = boot();
+  assert.throws(() => app.ipc['load-config']({ sender: {} }), /settings window/);
+  app.state.menu.find(item => item.label.startsWith('Settings')).click();
+  const event = { sender: app.state.settingsWindow.webContents };
+  app.ipc['save-config'](event, { protocol: 'http', host: 'localhost', port: 80 });
+  assert.equal(JSON.parse(app.files.get('/user/config.json')).openUrl, 'http://localhost/');
+  for (const connection of [
+    { protocol: 'file', host: 'localhost', port: 80 },
+    { protocol: 'https', host: 'localhost/path', port: 443 },
+    { protocol: 'https', host: 'localhost', port: 0 },
+    { protocol: 'https', host: 'localhost', port: 65536 }
+  ]) assert.throws(() => app.ipc['save-config'](event, connection), /valid host/);
+});
+
+test('manual update check reports up-to-date and is disabled in raw builds', async () => {
+  const app = boot();
+  await new Promise(setImmediate);
+  const check = app.state.menu.find(item => item.label === 'Check for Updates');
+  assert.equal(check.enabled, true);
+  const result = check.click();
+  assert.equal(app.state.checks, 2);
+  assert.ok(app.state.menu.some(item => item.label === 'Checking for Updates...' && !item.enabled));
+  app.handlers['update-not-available']();
+  await result;
+  assert.ok(app.notices.some(item => item.title.includes('up to date')));
+  const raw = boot({ installed: false });
+  assert.equal(raw.state.menu.find(item => item.label === 'Check for Updates').enabled, false);
+});
+
+test('manual update download and failure give feedback without duplicate checks', async () => {
+  const app = boot();
+  await new Promise(setImmediate);
+  await app.state.menu.find(item => item.label === 'Check for Updates').click();
+  app.handlers['update-available']();
+  assert.ok(app.notices.some(item => item.title.includes('Downloading')));
+  assert.ok(app.state.menu.some(item => item.label === 'Downloading Update...' && !item.enabled));
+  app.handlers.error(new Error('offline'));
+  assert.ok(app.notices.some(item => item.title.includes('Unable')));
+  assert.ok(app.state.menu.some(item => item.label === 'Check for Updates' && item.enabled));
+});
+
 test('runtime resources resolve within the reorganized src directory', () => {
   const app = boot();
+  assert.ok(require('../package.json').scripts['package:raw'].includes('--no-asar'));
   assert.equal(app.images[0], '/bundle/src/assets/icons/trayIcon-green.png');
   app.state.menu.find(item => item.label.startsWith('Settings')).click();
   assert.equal(app.windows[0], '/bundle/src/renderer/settings.html');

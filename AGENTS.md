@@ -26,6 +26,8 @@ instructions for all coding agents; keep them current when workflows change.
 - Do not move Unreleased entries or bump versions during ordinary development.
 - Run npm run check and npm test. Build with npm run package after changes to
   runtime paths, assets, dependencies, packaging, or update/release configuration.
+- Run npm audit and npm run test:electron on Windows after dependency, preload,
+  or settings changes; inspect the native smoke-test screenshots under dist/.
 - Review git status and diffs, preserve unrelated user work, and report checks and
   blockers honestly. Never claim an upload, live upgrade, or CI run was verified
   unless it actually was.

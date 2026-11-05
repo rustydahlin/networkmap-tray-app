@@ -1,15 +1,16 @@
 {
     "name": "tray-app",
     "productName": "Network Map Tray",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Electron tray application for network map monitoring",
     "main": "src/main/main.js",
     "scripts": {
         "start": "electron .",
-        "check": "node --check src/main/main.js && node --check scripts/release.cjs && node --check scripts/stage-installer.cjs",
+        "check": "node --check src/main/main.js && node --check src/main/preload.cjs && node --check src/renderer/settings.js && node --check scripts/release.cjs && node --check scripts/stage-installer.cjs && node --check tests/electron-smoke.cjs",
         "test": "node --test tests/app.test.cjs",
+        "test:electron": "electron tests/electron-smoke.cjs",
         "package": "npm run package:raw && npm run package:installer",
-        "package:raw": "electron-packager . network-map-tray --platform=win32 --arch=x64 --out=dist --overwrite --prune=true --ignore=\"^/(?!src(?:/|$)|node_modules(?:/|$)|package\\.json$)|^/src/config/local\\.json$|^/node_modules/\\.cache(/|$)\"",
+        "package:raw": "electron-packager . network-map-tray --platform=win32 --arch=x64 --out=dist --overwrite --prune=true --no-asar --ignore=\"^/(?!src(?:/|$)|node_modules(?:/|$)|package\\.json$)|^/src/config/local\\.json$|^/node_modules/\\.cache(/|$)\"",
         "package:installer": "electron-builder --win nsis --x64 --publish never && npm run stage:installer",
         "stage:installer": "node scripts/stage-installer.cjs",
         "release:prepare": "node scripts/release.cjs prepare",
@@ -18,18 +19,24 @@
     },
     "author": "Rusty Dahlin",
     "license": "MIT",
+    "engines": {
+        "node": ">=22.12.0"
+    },
     "dependencies": {
         "electron-updater": "^6.8.0",
-        "electron-store": "^8.1.0",
         "node-fetch": "^3.3.2",
         "sound-play": "^1.1.0",
         "winston": "^3.17.0"
     },
     "devDependencies": {
-        "electron": "^26.0.0",
+        "@electron/packager": "^20.3.0",
+        "electron": "45.2.3",
         "electron-builder": "^26.0.0",
-        "electron-packager": "^17.1.0",
         "semver": "^7.7.3"
+    },
+    "overrides": {
+        "glob@>=9.0.0 <14.0.2": "^14.0.3",
+        "minimatch@>=7.0.0 <11.0.1": "^11.0.4"
     },
     "build": {
         "appId": "com.rustydahlin.networkmaptray",
@@ -70,6 +77,6 @@
         ]
     },
     "allowScripts": {
-        "electron@26.6.10": true
+        "electron@45.2.3": true
     }
 }

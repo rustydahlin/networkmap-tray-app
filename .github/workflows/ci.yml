@@ -24,3 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npm audit --audit-level=moderate
+      - name: Native Electron settings smoke test
+        if: runner.os == 'Windows'
+        run: npm run test:electron

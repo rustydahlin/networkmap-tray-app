@@ -6,6 +6,29 @@ All notable changes to this project are documented here using
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-05
+
+### Added
+- Added a tray-menu update check with checking, downloading, up-to-date, and failure feedback.
+- Added a native Electron smoke test for settings layout, isolated IPC, keyboard navigation, validation, and saving.
+
+### Changed
+- Upgraded the application runtime from Electron 26 to Electron 45.2.3.
+- Replaced the deprecated electron-packager package with maintained @electron/packager 20.3.0.
+- Removed the unused electron-store dependency and declared Node.js 22.12.0 as the minimum toolchain.
+- Reorganized Settings into a compact, light/dark-aware form with all controls visible without scrolling.
+
+### Fixed
+- Removed the default application menu from the settings window and sized its content area correctly.
+- Honored the selected HTTP or HTTPS protocol and validated connection values before saving.
+- Waited for settings to save successfully before closing the form and displayed failures inline.
+- Preserved externally readable audio assets after the upgraded raw packager enabled archiving by default.
+
+### Security
+- Updated vulnerable Electron and build-tool dependencies; the current full npm audit reported zero vulnerabilities.
+- Isolated the settings renderer behind a sandboxed preload bridge, restricted its IPC senders, and blocked remote navigation.
+- Added dependency auditing and native Windows smoke checks to CI and release validation.
+
 ## [1.1.0] - 2026-11-05
 
 ### Added

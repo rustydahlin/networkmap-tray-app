@@ -97,6 +97,9 @@ let reconnectTime = null;
 let suppressNotifications = false;
 let notificationSuppressionTimer;
 let settingsWindow;
+let updateCheckInProgress = false;
+let updateDownloadInProgress = false;
+let manualUpdateRequest = false;
 let cfg = loadConfig();
 
 const NOTIFICATION_SUPPRESSION_MS = 3 * 60 * 1000;
@@ -263,15 +266,22 @@ function openSettings() {
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: 360,
-    height: 260,
-    resizable: false,
-    title: 'Settings',
+    width: 420,
+    height: 350,
+    useContentSize: true,
+    minWidth: 360,
+    minHeight: 350,
+    title: 'Network Map Tray Settings',
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true
     }
   });
+  settingsWindow.setMenu(null);
+  settingsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  settingsWindow.webContents.on('will-navigate', event => event.preventDefault());
   settingsWindow.loadFile(path.join(sourcePath, 'renderer', 'settings.html'));
   settingsWindow.on('closed', () => (settingsWindow = null));
 }
@@ -283,6 +293,13 @@ function buildTrayMenu() {
     {
       label: 'Open Map in Browser',
       click: () => shell.openExternal(cfg.openUrl)
+    },
+    {
+      label: updateDownloadInProgress ? 'Downloading Update...' :
+        updateCheckInProgress ? 'Checking for Updates...' : 'Check for Updates',
+      enabled: isInstalledBuild && process.platform === 'win32' &&
+        !updateCheckInProgress && !updateDownloadInProgress,
+      click: () => checkForUpdates(true)
     },
     {
       label: 'Start with Windows',
@@ -402,14 +419,28 @@ function createTray() {
 }
 
 // ─── IPC Handlers ──────────────────────────────────────────────────────────────
-ipcMain.handle('load-config', () => {
+function verifySettingsSender(event) {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('Settings can only be accessed from the settings window.');
+  }
+}
+
+ipcMain.handle('load-config', event => {
+  verifySettingsSender(event);
   cfg = loadConfig();
   return cfg;
 });
 
-ipcMain.on('save-config', (_evt, { host, port }) => {
-  cfg.openUrl = `https://${host}:${port}/`;
-  cfg.statusUrl = `https://${host}:${port}/status`;
+ipcMain.handle('save-config', (event, { host, port, protocol = 'https' }) => {
+  verifySettingsSender(event);
+  if (!['http', 'https'].includes(protocol) || typeof host !== 'string' ||
+      !host.trim() || /[\s/\\@?#]/.test(host.trim()) ||
+      !Number.isInteger(Number(port)) || Number(port) < 1 || Number(port) > 65535) {
+    throw new Error('Enter a valid host, HTTP or HTTPS protocol, and port from 1 to 65535.');
+  }
+  const connectionUrl = new URL(`${protocol}://${host.trim()}:${Number(port)}/`);
+  cfg.openUrl = connectionUrl.href;
+  cfg.statusUrl = new URL('status', connectionUrl).href;
   saveConfig(cfg);
 
   // refresh right‐click menu
@@ -417,17 +448,74 @@ ipcMain.on('save-config', (_evt, { host, port }) => {
 
   // immediately refresh icon state
   pollStatus().catch(() => {});
+  return cfg;
 });
 
 // ─── App Lifecycle ─────────────────────────────────────────────────────────────
+function refreshTrayMenu() {
+  if (tray) tray.setContextMenu(buildTrayMenu());
+}
+
+function reportUpdateError(error) {
+  logError(`Update failed: ${error.message}`);
+  updateDownloadInProgress = false;
+  if (manualUpdateRequest) {
+    new Notification({
+      title: 'Unable to check for updates',
+      body: 'Check your internet connection and try again.',
+      silent: true
+    }).show();
+    manualUpdateRequest = false;
+  }
+  refreshTrayMenu();
+}
+
+async function checkForUpdates(manual = false) {
+  if (!isInstalledBuild || process.platform !== 'win32' ||
+      updateCheckInProgress || updateDownloadInProgress) return;
+  updateCheckInProgress = true;
+  manualUpdateRequest = manual;
+  refreshTrayMenu();
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (error) {
+    reportUpdateError(error);
+  } finally {
+    updateCheckInProgress = false;
+    refreshTrayMenu();
+  }
+}
+
 function startAutomaticUpdates() {
   if (!isInstalledBuild || process.platform !== 'win32') return;
 
   autoUpdater.logger = log;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.on('error', error => logError(`Update failed: ${error.message}`));
+  autoUpdater.on('error', reportUpdateError);
+  autoUpdater.on('update-not-available', () => {
+    if (manualUpdateRequest) {
+      new Notification({
+        title: 'Network Map Tray is up to date',
+        body: `Version ${app.getVersion()} is the latest version.`,
+        silent: true
+      }).show();
+      manualUpdateRequest = false;
+    }
+  });
+  autoUpdater.on('update-available', () => {
+    updateDownloadInProgress = true;
+    if (manualUpdateRequest) {
+      new Notification({
+        title: 'Downloading Network Map Tray update',
+        body: 'The app will restart automatically when the download finishes.',
+        silent: true
+      }).show();
+    }
+    refreshTrayMenu();
+  });
   autoUpdater.on('update-downloaded', () => {
+    manualUpdateRequest = false;
     new Notification({
       title: 'Network Map Tray update ready',
       body: 'Restarting in 5 seconds to install the update.',
@@ -436,13 +524,8 @@ function startAutomaticUpdates() {
     setTimeout(() => autoUpdater.quitAndInstall(true, true), 5000);
   });
 
-  const checkForUpdates = () => {
-    autoUpdater.checkForUpdates().catch(error => {
-      logError(`Update check failed: ${error.message}`);
-    });
-  };
   checkForUpdates();
-  setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+  setInterval(() => checkForUpdates(), 6 * 60 * 60 * 1000);
 }
 
 app.whenReady().then(() => {

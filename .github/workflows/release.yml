@@ -35,6 +35,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npm audit --audit-level=moderate
+      - run: npm run test:electron
       - run: npm run release:verify
       - name: Build Windows distributions
         run: npm run package

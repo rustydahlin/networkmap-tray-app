@@ -2,7 +2,7 @@
 
 Windows x64 tray application for network map monitoring.
 
-Current release: [v1.1.0](https://github.com/rustydahlin/networkmap-tray-app/releases/tag/v1.1.0).
+Current release: [v1.2.0](https://github.com/rustydahlin/networkmap-tray-app/releases/tag/v1.2.0).
 
 ## Install
 
@@ -12,7 +12,8 @@ or your organization's Teams distribution location. Run it to install for the
 current user without an administrator prompt. The app launches into the tray.
 
 Right-click the tray icon and choose Settings to set the monitoring hostname and
-port. Start with Windows is enabled by default and can be disabled in the tray
+port and choose HTTP or HTTPS. The settings form fits without scrolling and follows
+the Windows light or dark appearance. Start with Windows is enabled by default and can be disabled in the tray
 menu. No registry file is needed. Remove any old manually created autostart entry
 when switching from a raw-folder copy.
 
@@ -21,10 +22,9 @@ installation folder, and survive upgrades and uninstalling. A new installation
 starts with localhost defaults; deployment-specific endpoints are never bundled.
 
 Installers are currently unsigned, so Windows SmartScreen may show a warning or
-an organization may block them. Electron 26 is also out of support; updating the
-runtime and configuring trusted code signing remain recommended follow-up work.
-The current dependency audit also reports known vulnerabilities; release tooling
-does not remediate those automatically or apply unreviewed breaking upgrades.
+an organization may block them. Trusted Windows code signing remains outstanding.
+Release v1.2.0 includes Electron 45.2.3, the updated settings form, and the tray
+menu's Check for Updates command.
 
 ## Automatic Updates
 
@@ -34,6 +34,11 @@ notification announces a restart in five seconds to install it. Settings persist
 Internet access and permission to download GitHub release assets are required.
 Offline or sleeping machines catch up after a later successful check.
 
+Right-click the tray icon and choose Check for Updates to check immediately.
+The command reports when the app is up to date, a download starts, or a check
+fails, and prevents duplicate checks while checking or downloading. It is disabled
+for development and raw-folder copies, which do not have an installed update feed.
+
 Development and raw-folder copies do not enable automatic updates or login
 startup. Teams is only an initial distribution location, not the update source.
 Editing code or rebuilding the same version does not update installed apps:
@@ -41,7 +46,9 @@ publish a higher version through the release workflow.
 
 ## Develop
 
-Use Node.js 22 LTS and npm. Build Windows distributions on Windows.
+Use Node.js 22.12.0 or newer (a supported LTS release is recommended) and npm.
+The current development runtime is pinned to Electron 45.2.3. Build Windows
+distributions on Windows.
 
 ```powershell
 npm ci
@@ -55,17 +62,32 @@ credentials, tokens, private keys, or signing certificates.
 ```powershell
 npm run check
 npm test
+npm audit
+npm run test:electron
 ```
 
-CI runs the same checks on Linux and Windows. Tests isolate Electron rather than
-installing the app or modifying Windows startup settings.
+CI runs syntax checks, regression tests, and dependency auditing on Linux and
+Windows. Windows CI and release builds also run the native Electron smoke test.
+It uses temporary settings, does not install the app or modify Windows startup,
+and writes light/dark screenshots under dist/ for inspection.
+
+Keep package.json, package-lock.json, and the ignored node_modules/ at the root:
+this is one npm package shared by the app and build/release tooling. Only runtime
+code and assets belong under src/. Moving dependencies into src/ would require
+separate manifests and packaging rules without benefiting this application.
+Use npm install when changing dependencies, and npm ci for reproducible installs.
+The lockfile's current full npm audit reports zero vulnerabilities. Scoped overrides
+patch the affected modern glob/minimatch chains without changing unrelated legacy
+APIs; validate both packaging formats whenever updating or removing those overrides.
 
 ## Repository Layout
 
 ```text
 src/
    main/main.js             Electron main process and tray behavior
+   main/preload.cjs          Sandboxed settings IPC bridge
    renderer/settings.html   Connection settings window
+   renderer/settings.js     Settings form behavior
    config/default.json      Safe bundled defaults
    config/local.json        Ignored development configuration
    assets/icons/            Tray icons

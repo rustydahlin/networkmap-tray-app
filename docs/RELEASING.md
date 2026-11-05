@@ -33,8 +33,10 @@ use a pull request if required rather than bypassing it.
    the top. An empty Unreleased section cannot be released. The automatic default
    `npm run release:prepare` also examines changelog headings and commit messages;
    the agent must still review whether its inferred bump fits the actual changes.
-5. Run `npm run check`, `npm test`, `npm run release:verify`, and
-   `npm run package`. Inspect the final diff and artifact layout. Confirm that
+5. Run `npm run check`, `npm test`, `npm audit`, `npm run test:electron`,
+   `npm run release:verify`, and `npm run package` on Windows. The native smoke
+   test uses temporary settings and captures light/dark screenshots under dist/.
+   Inspect the final diff and artifact layout. Confirm that
    local configuration, archives, secrets, and development tools are not bundled.
    Local installer and live-update testing should be reported separately from
    mocked tests; never claim it occurred when it did not.
@@ -58,6 +60,7 @@ use a pull request if required rather than bypassing it.
 ## GitHub Automation
 
 `.github/workflows/ci.yml` runs syntax and regression tests on Linux and Windows.
+It also audits dependencies and runs the native Electron smoke test on Windows.
 `.github/workflows/release.yml` builds on a Windows runner for pushed version
 tags. It verifies tag/package/lockfile/changelog agreement, tests the app, builds
 both distributions, derives release notes from the versioned changelog, and
@@ -92,8 +95,8 @@ preserved under `%APPDATA%/Network Map Tray/`.
 
 Installers are unsigned unless a trusted code-signing certificate is configured,
 so Windows SmartScreen or organizational policy may warn or block installation.
-Electron 26 remains out of support and should be upgraded before broad deployment.
-These are separate follow-up changes, not claims addressed by this restructuring.
-The current npm audit reports six moderate and three high vulnerabilities. Review
-and remediate dependencies in a dedicated change; do not run a forced audit fix
-or claim that successful packaging establishes application security.
+Release v1.2.0 uses Electron 45.2.3, and the dependency audit reports zero
+vulnerabilities after targeted glob/minimatch overrides. Older v1.1.0 copies use
+Electron 26 and should update to the latest release. Re-run
+the audit before releasing; dependency advisories change over time, and successful
+packaging or a clean dependency audit does not establish overall application security.
