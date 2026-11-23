@@ -10,7 +10,7 @@ const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'src/main/main.js'), 'utf8');
 const defaults = JSON.stringify({ statusUrl: 'https://localhost/status', openUrl: 'https://localhost/', pollIntervalMs: 10000 });
 
-function boot({ packaged = true, installed = true, saved, locked = true, local } = {}) {
+function boot({ packaged = true, installed = true, saved, locked = true, local, livePoll = false } = {}) {
   const files = new Map([['/bundle/src/config/default.json', defaults]]);
   if (saved) files.set('/user/config.json', JSON.stringify(saved));
   if (local) files.set('/bundle/src/config/local.json', JSON.stringify(local));
@@ -43,7 +43,8 @@ function boot({ packaged = true, installed = true, saved, locked = true, local }
       },
       Tray: class {
         constructor(image) { images.push(image); }
-        setToolTip() {}
+        setToolTip(value) { state.tooltip = value; }
+        setImage() {}
         setContextMenu(value) { state.menu = value; }
         on() {}
       },
@@ -61,9 +62,9 @@ function boot({ packaged = true, installed = true, saved, locked = true, local }
         on() {}
       },
       ipcMain: { handle: (name, callback) => { ipc[name] = callback; }, on: (name, callback) => { ipc[name] = callback; } },
-      nativeImage: {}
+      nativeImage: { createFromPath: value => value }
     },
-    'sound-play': {}, path: path.posix, https: require('node:https'),
+    'sound-play': { play: async () => {} }, path: path.posix, https: require('node:https'),
     'electron-updater': { autoUpdater: updater },
     winston: {
       createLogger: () => logger,
@@ -84,7 +85,14 @@ function boot({ packaged = true, installed = true, saved, locked = true, local }
     setInterval: (callback, delay) => intervals.push({ callback, delay }),
     setTimeout: (callback, delay) => timeouts.push({ callback, delay }), clearTimeout() {}
   });
-  vm.runInContext(source + '\npollStatus = async () => []; pollSolarwindsStatus = async () => {};', context);
+  if (livePoll) {
+    // Serve /status from context.__sites so the real pollStatus() runs.
+    context.__sites = [];
+    vm.runInContext(source.replace('const fetch = (url', 'let fetch = (url') +
+      '\nfetch = async () => ({ json: async () => __sites }); pollSolarwindsStatus = async () => {};', context);
+  } else {
+    vm.runInContext(source + '\npollStatus = async () => []; pollSolarwindsStatus = async () => {};', context);
+  }
   ready();
   return { files, handlers, ipc, intervals, timeouts, login, notices, images, windows, state, updater, context };
 }
@@ -194,6 +202,41 @@ test('manual update download and failure give feedback without duplicate checks'
   app.handlers.error(new Error('offline'));
   assert.ok(app.notices.some(item => item.title.includes('Unable')));
   assert.ok(app.state.menu.some(item => item.label === 'Check for Updates' && item.enabled));
+});
+
+test('muted sites and devices stay silent, and a site still alarming when its mute ends alerts once', async () => {
+  const app = boot({ livePoll: true });
+  const poll = async sites => { app.context.__sites = sites; await app.context.pollStatus(); };
+  const alerts = () => app.notices.filter(item => /^(🚨|⚠️) /u.test(item.title)).map(item => item.title);
+  const site = (name, status, extra = {}) => ({ name, status, alertStatus: status, muted: false, details: [], ...extra });
+  await new Promise(setImmediate);
+  // End the post-reconnect suppression window.
+  app.timeouts.filter(item => item.delay === 180000).forEach(item => item.callback());
+
+  await poll([site('A', 'green'), site('B', 'green'), site('C', 'green')]);
+  assert.equal(alerts().length, 0);
+
+  // Site A muted and goes red: silent. B's only down device is muted (yellow, alertStatus green): silent.
+  await poll([site('A', 'red', { muted: true, mute: { until: '2099-01-01T00:00:00Z' } }),
+    site('B', 'yellow', { alertStatus: 'green' }), site('C', 'green')]);
+  assert.equal(alerts().length, 0);
+
+  // Unmuted sites still alert normally.
+  await poll([site('A', 'red', { muted: true }), site('B', 'yellow', { alertStatus: 'green' }), site('C', 'red')]);
+  assert.deepEqual(alerts(), ['🚨 C']);
+
+  // A's mute ends while still red: one catch-up alert, then quiet.
+  await poll([site('A', 'red'), site('B', 'yellow', { alertStatus: 'green' }), site('C', 'red')]);
+  assert.deepEqual(alerts(), ['🚨 C', '🚨 A']);
+  await poll([site('A', 'red'), site('B', 'yellow', { alertStatus: 'green' }), site('C', 'red')]);
+  assert.equal(alerts().length, 2);
+
+  // Whole-map mute shows in the tooltip and silences everything.
+  const globalMute = { scope: 'global', until: '2099-01-01T00:00:00Z' };
+  await poll([site('A', 'green', { muted: true, globalMute }), site('B', 'red', { muted: true, globalMute }),
+    site('C', 'red', { muted: true, globalMute })]);
+  assert.equal(alerts().length, 2);
+  assert.match(app.state.tooltip, /muted until/);
 });
 
 test('runtime resources resolve within the reorganized src directory', () => {

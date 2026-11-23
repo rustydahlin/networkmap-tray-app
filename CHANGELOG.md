@@ -6,6 +6,9 @@ All notable changes to this project are documented here using
 
 ## [Unreleased]
 
+### Added
+- Added support for notification mutes set in the network map's admin portal. Muted sites and devices no longer raise alerts. When a mute ends, a site that is still alarming raises one catch-up alert. While the whole map is muted, the tray tooltip and menu show when the mute ends, and muted alert sites are marked with 🔕.
+
 ## [1.2.0] - 2026-11-05
 
 ### Added

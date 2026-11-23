@@ -26,6 +26,10 @@ an organization may block them. Trusted Windows code signing remains outstanding
 Release v1.2.0 includes Electron 45.2.3, the updated settings form, and the tray
 menu's Check for Updates command.
 
+## Notification Mutes
+
+Mutes set in the network map's admin portal (Mutes tab) apply to the tray app automatically. The app does not alert for a muted site, or for a muted device going down. If a site is still alarming when its mute ends, the app alerts once. While the entire map is muted, the tray tooltip and the left-click menu show when the mute ends. The tray icon color still reflects the real map status. This requires a map server that sends the `muted` and `alertStatus` fields on `/status`; with older servers the app behaves as before.
+
 ## Automatic Updates
 
 Installed copies check the public GitHub Releases feed at startup and every six

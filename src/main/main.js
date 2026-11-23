@@ -148,6 +148,33 @@ function suppressSiteNotifications() {
   }, NOTIFICATION_SUPPRESSION_MS);
 }
 
+// ─── Mutes ─────────────────────────────────────────────────────────────────────
+// The map server can mute notifications for the whole map, a site, or a device
+// (admin portal → Mutes). /status then marks each site with:
+//   muted       – true when the site (or whole map) is muted: never notify for it
+//   alertStatus – site color with muted devices counted as up: alert on this
+// Older servers send neither field, so this falls back to plain `status`.
+// While a site is muted its last-alerted status is frozen, so if it is still in
+// a different alarm state when the mute ends, one catch-up alert fires.
+const alertStatusOf = site => site.alertStatus || site.status;
+const isAlarm = status => status === 'red' || status === 'yellow';
+
+function formatMuteUntil(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return d.toLocaleString(undefined, sameDay
+    ? { hour: 'numeric', minute: '2-digit' }
+    : { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function updateTrayTooltip(sites) {
+  const globalMute = sites.find(s => s.globalMute)?.globalMute;
+  tray.setToolTip(globalMute
+    ? `Network Map Monitor — notifications muted until ${formatMuteUntil(globalMute.until)}`
+    : 'Network Map Monitor');
+}
+
 // Poll /status, raise notifications, update tray icon
 async function pollStatus() {
   try {
@@ -175,15 +202,13 @@ async function pollStatus() {
     }
 
     const alertTransitions = sites.filter(site => {
+      if (site.muted) return false;
       const prev = lastStatuses[site.name];
-      return (
-        prev &&
-        prev !== site.status &&
-        (site.status === 'red' || site.status === 'yellow')
-      );
+      const now = alertStatusOf(site);
+      return prev && prev !== now && isAlarm(now);
     });
     const activeAlertCount = sites.filter(
-      site => site.status === 'red' || site.status === 'yellow'
+      site => !site.muted && isAlarm(alertStatusOf(site))
     ).length;
 
     if (!suppressNotifications) {
@@ -199,11 +224,13 @@ async function pollStatus() {
     }
 
     sites.forEach(site => {
-      lastStatuses[site.name] = site.status;
+      if (!site.muted) lastStatuses[site.name] = alertStatusOf(site);
     });
 
+    // Icon still reflects the real map state; mutes only silence notifications.
     const anyAlarm = sites.some(s => s.status === 'red' || s.status === 'yellow');
     updateTrayIcon(anyAlarm ? 'yellow' : 'green');
+    updateTrayTooltip(sites);
     return sites;
   } catch (err) {
     logError('Error polling /status:', err);
@@ -352,8 +379,9 @@ function createTray() {
     const alertItems = sites
       .filter(s => s.status === 'red' || s.status === 'yellow')
       .map(site => {
-        // choose emoji
+        // choose emoji (🔕 suffix = notifications muted for this site/device)
         const emoji = site.status === 'red' ? '🔴' : '🟡';
+        const muted = site.muted || (site.details || []).some(d => d.mute && !d.alive);
         // if your /status payload includes lat/lng:
         let focusUrl;
         if (site.lat != null && site.lng != null) {
@@ -365,7 +393,7 @@ function createTray() {
           focusUrl = `${cfg.openUrl}#${encodeURIComponent(site.name)}`;
         }
         return {
-          label: `${emoji} ${site.name}`,
+          label: `${emoji} ${site.name}${muted ? ' 🔕' : ''}`,
           click: () => shell.openExternal(focusUrl)
         };
       });
@@ -402,8 +430,15 @@ function createTray() {
       enabled: false
     };
 
+    // Whole-map mute notice (set in the map's admin portal)
+    const globalMute = sites.find(s => s.globalMute)?.globalMute;
+    const muteItems = globalMute
+      ? [{ label: `🔕 Notifications muted until ${formatMuteUntil(globalMute.until)}`, enabled: false }, { type: 'separator' }]
+      : [];
+
     // 4) assemble full menu
     const menuTpl = [
+      ...muteItems,
       ...alertItems,
       { type: 'separator' },
       serverItem,   // ↕️ INSERTED HERE ↕️
