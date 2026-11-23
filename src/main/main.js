@@ -159,11 +159,14 @@ function suppressSiteNotifications() {
 const alertStatusOf = site => site.alertStatus || site.status;
 const isAlarm = status => status === 'red' || status === 'yellow';
 
-function formatMuteUntil(iso) {
-  const d = new Date(iso);
+// "until 4:30 PM" / "until Tue, Nov 25, 4:30 PM", or "until turned off" for an
+// open-ended ("Until I turn it off") mute, which the server flags `indefinite`.
+function formatMuteUntil(mute) {
+  if (mute.indefinite) return 'until turned off';
+  const d = new Date(mute.until);
   if (Number.isNaN(d.getTime())) return '';
   const sameDay = d.toDateString() === new Date().toDateString();
-  return d.toLocaleString(undefined, sameDay
+  return 'until ' + d.toLocaleString(undefined, sameDay
     ? { hour: 'numeric', minute: '2-digit' }
     : { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
@@ -171,7 +174,7 @@ function formatMuteUntil(iso) {
 function updateTrayTooltip(sites) {
   const globalMute = sites.find(s => s.globalMute)?.globalMute;
   tray.setToolTip(globalMute
-    ? `Network Map Monitor — notifications muted until ${formatMuteUntil(globalMute.until)}`
+    ? `Network Map Monitor — notifications muted ${formatMuteUntil(globalMute)}`
     : 'Network Map Monitor');
 }
 
@@ -433,7 +436,7 @@ function createTray() {
     // Whole-map mute notice (set in the map's admin portal)
     const globalMute = sites.find(s => s.globalMute)?.globalMute;
     const muteItems = globalMute
-      ? [{ label: `🔕 Notifications muted until ${formatMuteUntil(globalMute.until)}`, enabled: false }, { type: 'separator' }]
+      ? [{ label: `🔕 Notifications muted ${formatMuteUntil(globalMute)}`, enabled: false }, { type: 'separator' }]
       : [];
 
     // 4) assemble full menu

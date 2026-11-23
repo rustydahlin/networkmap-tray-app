@@ -237,6 +237,14 @@ test('muted sites and devices stay silent, and a site still alarming when its mu
     site('C', 'red', { muted: true, globalMute })]);
   assert.equal(alerts().length, 2);
   assert.match(app.state.tooltip, /muted until/);
+  assert.doesNotMatch(app.state.tooltip, /turned off/);
+
+  // An open-ended ("Until I turn it off") mute says so instead of showing the sentinel date.
+  const openEnded = { scope: 'global', until: '9999-12-31T00:00:00.000Z', indefinite: true };
+  await poll([site('A', 'red', { muted: true, globalMute: openEnded })]);
+  assert.equal(alerts().length, 2);
+  assert.match(app.state.tooltip, /muted until turned off/);
+  assert.doesNotMatch(app.state.tooltip, /9999/);
 });
 
 test('runtime resources resolve within the reorganized src directory', () => {

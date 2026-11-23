@@ -6,6 +6,11 @@ All notable changes to this project are documented here using
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-23
+
+### Changed
+- Open-ended ("Until I turn it off") mutes from the network map now show as "muted until turned off" in the tray tooltip and menu instead of a far-future date.
+
 ## [1.3.0] - 2026-11-23
 
 ### Added

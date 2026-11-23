@@ -2,7 +2,7 @@
 
 Windows x64 tray application for network map monitoring.
 
-Current release: [v1.3.0](https://github.com/rustydahlin/networkmap-tray-app/releases/tag/v1.3.0).
+Current release: [v1.3.1](https://github.com/rustydahlin/networkmap-tray-app/releases/tag/v1.3.1).
 
 ## Install
 
@@ -28,7 +28,7 @@ menu's Check for Updates command, and network-map notification mute support.
 
 ## Notification Mutes
 
-Mutes set in the network map's admin portal (Mutes tab) apply to the tray app automatically. The app does not alert for a muted site, or for a muted device going down. If a site is still alarming when its mute ends, the app alerts once. While the entire map is muted, the tray tooltip and the left-click menu show when the mute ends. The tray icon color still reflects the real map status. This requires a map server that sends the `muted` and `alertStatus` fields on `/status`; with older servers the app behaves as before.
+Mutes set in the network map's admin portal (Mutes tab) apply to the tray app automatically. The app does not alert for a muted site, or for a muted device going down. If a site is still alarming when its mute ends, the app alerts once. While the entire map is muted, the tray tooltip and the left-click menu show when the mute ends; open-ended mutes show as muted until turned off. The tray icon color still reflects the real map status. This requires a map server that sends the `muted` and `alertStatus` fields on `/status`; with older servers the app behaves as before.
 
 ## Automatic Updates
 
