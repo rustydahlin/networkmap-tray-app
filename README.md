@@ -2,7 +2,7 @@
 
 Windows x64 tray application for network map monitoring.
 
-Current release: [v1.2.0](https://github.com/rustydahlin/networkmap-tray-app/releases/tag/v1.2.0).
+Current release: [v1.3.0](https://github.com/rustydahlin/networkmap-tray-app/releases/tag/v1.3.0).
 
 ## Install
 
@@ -23,8 +23,8 @@ starts with localhost defaults; deployment-specific endpoints are never bundled.
 
 Installers are currently unsigned, so Windows SmartScreen may show a warning or
 an organization may block them. Trusted Windows code signing remains outstanding.
-Release v1.2.0 includes Electron 45.2.3, the updated settings form, and the tray
-menu's Check for Updates command.
+Release v1.3.0 includes Electron 45.2.3, the updated settings form, the tray
+menu's Check for Updates command, and network-map notification mute support.
 
 ## Notification Mutes
 
